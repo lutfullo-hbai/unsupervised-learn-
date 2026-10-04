@@ -42,6 +42,10 @@ coverage.xml
 # --- Data ---
 # Katta PDF'lar git'ga kirmaydi (kichik fixture'lar tests/fixtures/ da)
 data/raw/*.pdf
+# Yuklab olingan haqiqiy korpus (adabiyot + ochiq PDF'lar).
+# Ma'lumot katta va tashqi manbadan olinadi; **provenance** esa
+# `data/manifest.json` da saqlanadi va shu fayl commit qilinadi.
+data/raw/real/
 # Keshlangan matn, chunk'lar, vektorlar
 data/processed/
 # Notebook'dan chiqqan natijalar

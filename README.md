@@ -435,17 +435,21 @@ pdf-analyzer/
 │   └── 10_final_evaluation.ipynb
 │
 ├── data/
-│   ├── raw/                       # namuna PDF'lar (git'ga katta fayl qo'shma)
-│   └── processed/                 # keshlangan chunk'lar, vektorlar
+│   ├── raw/                       # namuna PDF'lar (git'iga katta fayl qo'shma)
+│   │   └── real/                  # real korpus — .gitignore'da (10 kitob + 5 OA PDF)
+│   ├── processed/                 # keshlangan chunk'lar, vektorlar
+│   └── manifest.json              # haqiqiy korpus: manba, litsenziya, SHA-256
 │
 ├── scripts/
+│   ├── fetch_real_documents.py    # real korpusni yuklash (Gutenberg/arXiv/PLOS)
+│   ├── make_real_pdfs.py          # Gutenberg matni -> PDF (pymupdf Story)
 │   └── make_sample_pdfs.py        # M0  namuna PDF'lar yaratish (PyMuPDF)
 │
 ├── docs/
 │   ├── architecture.md            # M0   arxitektura brief (20 bo'lim)
 │   ├── io_contract.md             # M0   Input/Output contract + baholash mezonlari
 │   ├── evaluation_report.md       # M17
-│   ├── limitations.md             # M2 (L-01..L-06), M17 da kengaytiriladi
+│   ├── limitations.md             # M2–M3 (L-01..L-15), M17 da kengaytiriladi
 │   ├── learning_notes.md          # har milestone'da "nimani o'rgandim"
 │   └── figures/                   # M8/M17 grafiklar
 │
@@ -1009,6 +1013,15 @@ bilan tasdiqlangan** topilmalar:
 | **L-04** | `MIN_TOTAL_CHARS` chegarasi ikki tomonlama xato qiladi | 100, `.env` dan o'qiladi |
 | **L-05** | Testlar `data/raw/` ga bog'liq emas | PDF'lar test ichida yaratiladi |
 | **L-06** | `insert_text` test fixture matnini kesadi | `insert_textbox` ishlatiladi |
+| **L-07** | `ENGLISH_STOP_WORDS` `system` ni o'ldiradi | `PROTECTED_TERMS` (75 ta) |
+| **L-08** | Namuna PDF'lar dekorativ chiziqdan **majburiy** tozalanadi | `remove_decorative_rules` qo'shildi |
+| **L-09** | Stop-word filtrining o'zi kichik korpusda ma'nosiz | korpus o'lchovi bilan tekshirildi |
+| **L-10** | Stemming o'lchangan, lekin Porter emas | B (stemming'siz) tanlandi |
+| **L-11** | Stop-word faqat inglizcha | `va`, Kirill saqlanadi |
+| **L-12** | `fix_hyphenation` so'z **yaratib** yubaradi | `build_vocabulary()` bilan tasdiqlash |
+| **L-13** | Ligatura lug'atni ifloslantiradi | `build_vocabulary` normalizatsiya qiladi |
+| **L-14** | Chekka izlash real PDF header'ini topmaydi | `edge_lines=None` **ishlatilmaydi** (509 qator yo'q qilinadi) |
+| **L-15** | Boshqa kitob yuklangan (ID 25438 ≠ The Jungle) | `verify_title()` — sarlavha matndan tekshiriladi |
 
 > **Eski maslahat bekor qilindi:** "ikki ustunli PDF'da matn tartibi
 > buziladi → `get_text("blocks", sort=True)` ni sinab ko'r" — o'lchovda
@@ -1060,44 +1073,170 @@ Tokenizatsiya, lowercasing, stop words, tinish belgilari, bo'shliqlarni normalla
 
 **Muhim:** M3.T3 — M9 ning oldindan sharti. Embedding uchun `display_text`, TF-IDF uchun `ml_text` ishlatiladi.
 ### Qadamlar
-- [ ] **Extraction artefaktlarini top** (notebook'da 5–10 sahifani ko'z bilan ko'r):
-  - so'z o'rtasidagi defis bilan uzilish: `informa-\ntion`
-  - takrorlanuvchi header/footer (har sahifada bir xil qator)
-  - sahifa raqamlari (`12`, `Page 12 of 40`)
-  - ortiqcha bo'sh qatorlar, `\xa0`, ligaturalar
-  - havolalar/URL, `[12]` kabi iqtiboslar
-- [ ] **Funksiyalar yoz** (har biri alohida, kichik, testlanadigan):
+- [x] **Extraction artefaktlarini top** (notebook'da 5–10 sahifani ko'z bilan ko'r):
+  - so'z o'rtasidagi defis bilan uzilish: `informa-\ntion` — **namuna PDF'larida yo'q**
+  - takrorlanuvchi header/footer (har sahifada bir xil qator) — **✅ 4/4 faylda**
+  - sahifa raqamlari (`12`, `Page 12 of 40`) — **✅ 4/4 faylda**
+  - ortiqcha bo'sh qatorlar, `\\xa0`, ligaturalar — **namuna PDF'larida yo'q**
+  - havolalar/URL, `[12]` kabi iqtiboslar — **namuna PDF'larida yo'q**
+- [x] **Funksiyalar yoz** (har biri alohida, kichik, testlanadigan):
   - `normalize_whitespace(text)`
   - `fix_hyphenation(text)` — `-\n` ni birlashtirish
   - `remove_repeated_headers_footers(pages)` — kamida 50% sahifada uchraydigan qisqa qatorlarni o'chir
   - `remove_page_numbers(text)`
   - `normalize_unicode(text)` — `unicodedata.normalize("NFKC", ...)` ligaturalarni tuzatadi
   - `clean_text(text)` — yuqoridagilarning ketma-ketligi
-- [ ] **Muhim:** ikki xil matn kerak bo'lishi mumkin:
+- [x] **Muhim:** ikki xil matn kerak bo'lishi mumkin:
   - `display_text` — yengil tozalangan (chunk'lar foydalanuvchiga/LLM'ga ko'rsatiladi)
   - `ml_text` — ancha tozalangan (vektorlash uchun)
 
   Ikkalasini ham saqla, aks holda LLM'ga lowercased/stop-word'siz matn yuborasan.
-- [ ] **Strategiyalarni solishtir** (kamida 3 xil) va natijani jadvalga yoz:
+- [x] **Strategiyalarni solishtir** (kamida 3 xil) va natijani jadvalga yoz:
 
-  | Strategiya | Stop words | Lowercase | Stemming | Vocabulary hajmi | Top-10 so'z ma'noli-mi? |
-  |------------|-----------|-----------|----------|------------------|--------------------------|
-  | A: minimal | yo'q | ha | yo'q | | |
-  | B: standart | ha | ha | yo'q | | |
-  | C: agressiv | ha | ha | ha | | |
+  O'lchov korpusi: 29 sahifa / 13 869 belgi (4 ta namuna PDF, artefaktlar olib tashlangandan keyin).
 
-  (Vocabulary hajmini M5 da `TfidfVectorizer` bilan o'lchaysan — shu yerda faqat tayyorla.)
-- [ ] 8–10 ta unit-test misoli yoz (keyinroq `tests/test_preprocessing.py` ga o'tadi).
+  | Strategiya | Stop words | Lowercase | Stemming | Token | Lug'at | Top-10 so'z ma'noli-mi? |
+  |------------|-----------|-----------|----------|-------|--------|---------------------------|
+  | A: minimal | yo'q | ha | yo'q | 1 817 | 926 | ❌ `and, the, a, of, to, as` — F7 muammosi |
+  | **B: standart** | **ha** | **ha** | yo'q | **1 393** | **854** | ✅ `chapter, data, nodes, cluster, replication` |
+  | C: agressiv | ha | ha | ha* | 1 393 | 775 | ✅ lekin atoma buziladi: `kmeans→kmean`, `embedding→embedd` |
+
+  **Tanlov: B.** C lug'atni yana 9.3% qisqartiradi, lekin texnik atomani
+  buzadi — bu qiymat bermaydi, chunki muammo token ko'pligi emas,
+  **ma'nosiz token**.
+
+  *`crude_stem` — ataylab yozilgan sodda kesuvchi, Porter **emas**; muhitda
+  stemmer yo'q. Cheklov: `docs/limitations.md` L-10.*
+
+- [x] 8–10 ta unit-test misoli yoz (keyinroq `tests/test_preprocessing.py` ga o'tadi).
+
+### Topshirilgan natija (M3)
+
+| Natija | Holat |
+|--------|-------|
+| `normalize_unicode`, `fix_hyphenation`, `remove_page_numbers`, `remove_decorative_rules`, `normalize_whitespace` | ✅ |
+| `remove_repeated_headers_footers(pages)` — chekka + takrorlanish + uzunlik | ✅ |
+| `display_text` / `ml_text` ajratilgan | ✅ |
+| 92 ta test, `app/nlp` coverage **100%** | ✅ |
+| `tests/test_real_corpus.py` — 23 ta test (sarlavha/litsenziya tekshiruvi) | ✅ |
+| Barcha funksiyalar idempotent (notebook + test) | ✅ |
+| Texnik atoma saqlanadi (`AI, API, SQL, CNN, RAG`) | ✅ |
+
+**Rejalashtirilmagan qo'shimcha funksiya:** `remove_decorative_rules`.
+Reja 6 ta funksiya ko'rsatgan, lekin o'lchovda namuna PDF'larining
+**4/4 ida** `=====` chiziqlari topildi (3–12 marta). Bu chiziq TF-IDF'ga
+`=====` token sifatida kirib, top terms'ni ifloslaydi. Sabab va dalil:
+`docs/limitations.md` L-08.
+
+**O'lchangan artefaktlar — sintetik korpus** (4 ta namuna PDF, jami 16 464 belgi):
+
+| Artefakt | Namuna PDF'larda | Tozalash |
+|----------|-------------------|----------|
+| Takrorlanuvchi header | ✅ 4/4 | `remove_repeated_headers_footers` |
+| `Page N of M` | ✅ 4/4 | `remove_page_numbers` |
+| `=` dekorativ chiziq | ✅ 4/4 | `remove_decorative_rules` |
+| Defis bilan uzilgan so'z | ❌ yo'q | `fix_hyphenation` — **faqat sintetik test** |
+| Ligatura, `\xa0` | ❌ yo'q | `normalize_unicode` — **faqat sintetik test** |
+
+Belgining 12–17% i olib tashlandi. Tozalashdan keyin korpus
+13 869 belgi.
+
+---
+
+### Real korpus bilan tekshiruv (namuna PDF yetarli emasdi)
+
+Yuqoridagi jadval **4 ta sintetik PDF** ga asoslangan edi. Ular
+hyphenation va ligatura **yo'q** edi — ya'ni eng qiyin ikki funksiya
+faqat qo'lda yozilgan testlar bilan tekshirilgan edi.
+
+Yuklangan: `scripts/fetch_real_documents.py` — **10 ta Project Gutenberg
+kitobi** (public domain, turli janr: ayol, fantastika, detektiv, tabiiy
+ilmiy, falsafiy, ijtimoiy) + **5 ta ochiq maqola** (3 × arXiv, 2 × PLOS
+ONE). Jami **5 501 150 belgi**, 2 527 + 69 sahifa. Manba, litsenziya
+va SHA-256 — `data/manifest.json`.
+
+> **Ikkita o'lchov xatosi bo'ldi.** (1) 60 sahifalik namuna bilan
+> o'lchab, ligaturani 207, hyphenation nuqtasini 470 deb yozgan edim —
+> to'liq korpusda bu **11 594** va **750**. (2) ID 25438 ni "The
+> Jungle" deb yozgan edim, lekin u aslida **"The Airlords of Han"**
+> edi (to'g'ri ID — **140**). Namuna asosida yoki xotira asosida
+> xulosa yozish — "real ma'lumot bilan tekshirdim" degan narsa emas.
+
+**Natijada to'rtta haqiqiy xato topildi** (barchasi tuzatildi):
+
+| # | Xato | Nima bo'lardi | Tuzatish |
+|---|------|---------------|----------|
+| 1 | `(\\w)-` faqat **bitta belgi** ushlaydi | `transduc-\ntion` da `c-\nt` match bo'lardi. Natija tasodufen to'g'ri chiqar edi | `(\\w+)-` |
+| 2 | Har doim barlashtirish | 750 nuqtadan **446** ta haqiqiy kompaniya buzilardi (`bookshelves`, `twentyfour`) | `build_vocabulary()` — faqat korpusda tasdiqlangan shakl |
+| 3 | `build_vocabulary` normalizatsiya qilmasdi | lug'atda `suﬃcient`, solishtiriladigani `sufficient` — **hech qachon** mos kelmasdi | `normalize_unicode` ichida |
+| 4 | **Boshqa kitob** yuklangan (ID 25438) | "The Jungle" o'rniga "The Airlords of Han" yuklangan. PDF ochiladi, sahifa va belgi bor — xato **ko'rinmaydi** | `verify_title()` — sarlavha va muallif matn ichidan tekshiriladi |
+
+> Xato 1 faqat xato 2 kiritilganda ko'rindi: yangi kod lug'at bilan
+> ishlagan zahoti `re.finditer` ga qarab tushunildi. Yakuniy satrni
+> tekshiradigan testlar bu xatoni ko'ra olmasdi.
+>
+> Xato 4 boshqacha: u **koding emas, ma'lumotning** xatosi — va hech
+> qanday birlik test uni ushlamagan, chunki testlar tarmoqqa
+> ulanmaydi (L-05). Yechim ma'lumot chegarasida: `verify_title()`
+> topilmasa `FetchError` beradi va hujjat manifestga kirmaydi.
+
+**O'lchangan natija** (`clean_pages`, real korpus):
+
+| Ko'rsatkich | Oldin | Keyin |
+|-------------|-------|-------|
+| Ligatura (butun korpus) | 11 594 | **0** |
+| Ligatura (`dracula.pdf`) | 1 691 | **0** |
+| Sahifa raqami qolgani | — | **0** |
+| `plos_middle_ear_effusion.pdf` | — | **−1.6%** (header/footer) |
+| `arxiv_bradley_terry.pdf` | — | **−1.3%** |
+| Adabiyot belgisi | — | **+0.1%** (ligatura `ﬀ`→`ff` kengayadi) |
+| Lug'at: `dracula`, `mina`, `watson`, `holmes`, `thoreau` | — | ✅ saqlangan |
+| Lug'at: `attention`, `transformer`, `retina`, `pca` | — | ✅ saqlangan |
+
+**Hyphenation xarakteri** — to'liq korpus, 750 nuqta:
+
+| Guruh | Sahifa | Nuqta | Bitta so'z sindi | Haqiqiy kompaniya |
+|-------|--------|-------|------------------|-------------------|
+| Adabiyot | 2 527 | 404 | 60 (15%) | **344 (85%)** — `book-shelves`, `cherry-tart`, `twenty-four`, `star-ﬁsh` |
+| arXiv | 39 | 206 | 136 (66%) | 70 (34%) — `sequence-aligned`, `position-wise`, `source-target` |
+| PLOS | 30 | 140 | 108 (77%) | 32 (23%) — `A-RC`, `Nose-Throat` |
+
+Bitta so'z sindi (`transduc-` + `tion`) va ikki so'zli kompaniya
+(`book-` + `shelves`) matnda **bir xil** ko'rinadi. Konservativ qaror:
+**nomutanosib xatolardan yomonini yo'q qilish** — keraksiz
+birlashtirish `bookshelves` kabi **so'z yo'q** token yaratadi,
+birlashtirmaslik esa `book-shelves` (to'g'ri token) saqlanadi.
+
+**Cheklov:** so'z korpusda hech qayerda butun ko'rinmasa,
+birlashtirilmaydi — boshqa ishonchli ro'yxat talab qiladi
+(`nltk` yo'q, yangi bog'liqlik qo'shilmadi).
+
+**Arxiv/PLOS header muammosi hal qilinmadi** — `edge_lines=None`
+rejimi header'ni topadi (14/14 → 1/14), lekin `arxiv_bradley_terry.pdf`
+da **−4.0%**, ya'ni **509 qator** ilmiy mazmun (formula belgilari: `X`,
+`i`, `1`) yo'q qiladi. Default `edge_lines=3` qoldirildi. To'g'ri yechim
+— M2 dan blok koordinatalarini olish; M3 doirasida emas.
+Dalil: L-12, L-13, L-14, L-15.
 
 ### Kod skeleti
 ```python
 import re, unicodedata
 
 def normalize_unicode(t: str) -> str:
-    return unicodedata.normalize("NFKC", t)
+    return unicodedata.normalize("NFKC", t)      # ligatura: ﬁ → fi
 
-def fix_hyphenation(t: str) -> str:
-    return re.sub(r"(\w)-\n(\w)", r"\1\2", t)
+def build_vocabulary(pages) -> frozenset[str]:
+    """Korpusdan tasdiqlangan so'zlar — `bookshelves` ni oldini oladi."""
+    return frozenset(t for p in pages for t in _TOKEN_RE.findall(normalize_unicode(p).lower()))
+
+def fix_hyphenation(t: str, vocabulary=None) -> str:
+    # `+` majburiy: `(\w)-` faqat oxirgi belgini ushlaydi
+    if vocabulary is None:
+        return re.sub(r"(\w+)-\n[ \t]*(\w+)", r"\1\2", t)
+    return re.sub(r"(\w+)-\n[ \t]*(\w+)",
+                  lambda m: m.group(1) + m.group(2)
+                  if (m.group(1) + m.group(2)).lower() in vocabulary else m.group(0),
+                  t)
 
 def normalize_whitespace(t: str) -> str:
     t = t.replace("\xa0", " ")
@@ -1107,6 +1246,11 @@ def normalize_whitespace(t: str) -> str:
 ```
 
 > Paragraf chegarasini (`\n\n`) **yo'qotma** — M4 chunking shunga tayanadi.
+
+> Adabiyot PDF'lari **mazmun** jihatidan haqiqiy (Gutenberg matni),
+> lekin **artefakt** jihatidan sun'iy — MuPDF avtomatik hyphenation
+> qilmaydi va header qo'yilmaydi. Artefakt dalili faqat tashqi
+> arXiv/PLOS PDF'laridan olinadi.
 
 ### Qanday tekshirasan
 - "Oldin/keyin" juftliklarini ko'z bilan solishtir (5 ta sahifa).
@@ -2154,7 +2298,7 @@ MVP → Yaxshiroq chunking → Yaxshiroq embeddings → DBSCAN/HDBSCAN
 | ✅ | **M1** — Environment | 2026-10-04 |
 | ✅ | **M-T** — Translation Module | 2026-10-04 |
 | ✅ | **M2** — PDF Extraction | 2026-10-04 |
-| ⬜ | **M3** — Text Preprocessing | ____ |
+| ✅ | **M3** — Text Preprocessing | 2026-10-04 |
 | ⬜ | **M4** — Chunking | ____ |
 | ⬜ | **M5** — TF-IDF | ____ |
 | ⬜ | **M6** — K-Means | ____ |
@@ -2197,10 +2341,10 @@ M2   ✅ T1 Notebook 01 (PyMuPDF)                    → notebooks/01_pdf_extrac
      ✅ T3 extract_pages() + magic/needs_pass        → app/services/pdf_extractor.py, app/core/config.py
      ✅ T4 Unit testlar (45), pdf_extractor 100%     → tests/test_pdf_extractor.py
 
-M3   ⬜ T1 Notebook 02 (artefaktlar + 3 strategiya)
-     ⬜ T2 preprocessing.py (6 funksiya)
-     ⬜ T3 display_text / ml_text ajratish
-     ⬜ T4 Unit testlar
+M3   ✅ T1 Notebook 02 (artefaktlar + 3 strategiya)  → notebooks/02_preprocessing.ipynb
+     ✅ T2 preprocessing.py (7 funksiya)              → app/nlp/preprocessing.py
+     ✅ T3 display_text / ml_text ajratish            → app/nlp/preprocessing.py
+     ✅ T4 Unit testlar (68), app/nlp 100%           → tests/test_preprocessing.py
 
 M4   ⬜ T1 Notebook 03 (parametr solishtirish)
      ⬜ T2 Chunk sxemasi + chunking.py
@@ -2304,16 +2448,15 @@ M18  ⬜ T1 Refaktor + type hints
      ⬜ T10 "10 daqiqada ishga tushirish" testi
 ```
 
-**Hozirgi qadam: M3.T1** — Notebook 02 (preprocessing artefaktlari).
+**Hozirgi qadam: M4.T1** — Notebook 03 (chunk parametrlari: 200/800, 300/1200, 500/2000).
 
-> M0, M1, M-T, M2 ✅. M2 dan keyin pipeline **matn o'qishdan** boshlab
-> to'liq ishlaydi: `PDF → sahifa matni`. Keyingi: matnni tozalash → chunk →
-> TF-IDF → K-Means.
+> M0, M1, M-T, M2, M3 ✅. M3 dan keyin pipeline matnni **to'g'ri
+> tozalaydi** va TF-IDF uchun tayyor matn beradi.
+> `PDF → sahifa matni → toza matn`. Keyingi: chunk → TF-IDF → K-Means.
 
-> M0, M1, M-T ✅. M-T tamomlandi, endi **asosiy pipeline** boshlanadi.
-> Keyingi: `data/raw/*.pdf` → matn → preprocessing → chunking → TF-IDF → K-Means.- [ ] PDF upload ishlaydi
+- [ ] PDF upload ishlaydi
 - [ ] Matn ajratish ishlaydi
-- [ ] Preprocessing ishlaydi
+- [x] Preprocessing ishlaydi
 - [ ] Chunking ishlaydi
 - [ ] TF-IDF ishlaydi
 - [ ] K-Means ishlaydi
