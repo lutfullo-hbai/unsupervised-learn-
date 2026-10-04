@@ -1,0 +1,42 @@
+# PDF Analyzer — Unsupervised Learning loyihasi
+#
+# O'rnatish (M1 dan keyin versiyalar `pip freeze` bilan qotirilgan):
+#   uv venv --python 3.12 .venv
+#   uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
+#   uv pip install --python .venv/bin/python -r requirements.txt
+#
+# Muhim: torch CPU-only versiyasidan foydalaniladi (GPU kerak emas, image kichik).
+
+# --- PDF ---
+pymupdf==1.28.2
+
+# --- ML / NLP ---
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+matplotlib==3.11.2
+
+# --- Embeddings (CPU torch) ---
+# torch==2.14.1+cpu   -> alohida o'rnatiladi (yuqoriga qarang)
+sentence-transformers==6.1.0
+
+# --- LLM (Ollama) ---
+requests==2.34.2
+httpx==0.28.1
+
+# --- Backend ---
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# --- Frontend ---
+streamlit==1.65.0
+
+# --- Test ---
+pytest==9.1.1
+pytest-cov==7.1.0
+
+# --- Notebook ---
+jupyter==1.1.1
