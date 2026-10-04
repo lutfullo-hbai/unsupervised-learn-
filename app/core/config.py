@@ -8,6 +8,9 @@ ish vaqtida emas.
 M-T kiritgan maydonlar `TRANSLATION_*` bilan boshlanadi. Ular
 `TranslationConfigError` emas, `pydantic.ValidationError` beradi —
 chunki bu **sozlash** vaqti xatosi, tarjima vaqti emas.
+
+M2 qo'shdi `min_total_chars` — bu skanerlangan PDF chegarasi
+va kodga yozilmaydi (AGENTS.md §18: konfiguratsiya faqat `.env` dan).
 """
 
 from functools import lru_cache
@@ -33,6 +36,12 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     max_upload_mb: int = 25
+
+    # --- PDF (M2) --------------------------------------------------------
+    # Jami belgi chegarasi: ostida bo'lsa `ScannedPdfError`. chegara
+    # juda past bo'lsa — oddiy PDF rad etiladi, juda yuqori bo'lsa —
+    # skanerlangan PDF o'tib ketadi.
+    min_total_chars: int = 100
 
     # --- LLM (M11) ------------------------------------------------------
     llm_provider: str = "ollama"
