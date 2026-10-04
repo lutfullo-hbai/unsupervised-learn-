@@ -445,7 +445,7 @@ pdf-analyzer/
 │   ├── architecture.md            # M0   arxitektura brief (20 bo'lim)
 │   ├── io_contract.md             # M0   Input/Output contract + baholash mezonlari
 │   ├── evaluation_report.md       # M17
-│   ├── limitations.md             # M17/M18
+│   ├── limitations.md             # M2 (L-01..L-06), M17 da kengaytiriladi
 │   ├── learning_notes.md          # har milestone'da "nimani o'rgandim"
 │   └── figures/                   # M8/M17 grafiklar
 │
@@ -930,41 +930,110 @@ class NotEnoughContentError(PdfAnalyzerError): ...
 ```
 
 ### Kod skeleti — `app/services/pdf_extractor.py`
+
+> ⚠️ Bu skelet **qisqartirilgan**. To'liq implementatsiya qo'shadi:
+> magic bytes (I1), bo'sh fayl (I2), `needs_pass` (I5), sahifa soni (I7),
+> hujjatni `finally` da yopish.
+
 ```python
-import pymupdf
-from app.core.exceptions import InvalidPdfError, ScannedPdfError
-from app.schemas.document import PageText
-
-MIN_TOTAL_CHARS = 100
-
-def extract_pages(source: str | bytes) -> list[PageText]:
+def extract_pages(
+    source: str | Path | bytes, *, min_total_chars: int | None = None
+) -> list[PageText]:
+    if min_total_chars is None:
+        min_total_chars = get_settings().min_total_chars   # .env dan, kodga yozilmaydi
+    _validate_head(source)      # I1, I2 — magic bytes va bo'sh fayl
+    doc = _open(source)         # I6 — pymupdf xatolari -> InvalidPdfError
     try:
-        doc = (pymupdf.open(stream=source, filetype="pdf")
-               if isinstance(source, bytes) else pymupdf.open(source))
-    except Exception as e:
-        raise InvalidPdfError(str(e)) from e
-
-    pages = []
-    for i, page in enumerate(doc, start=1):
-        text = page.get_text("text").strip()
-        pages.append(PageText(page=i, text=text))
-
-    if sum(len(p.text) for p in pages) < MIN_TOTAL_CHARS:
-        raise ScannedPdfError("PDF'da yetarli matn yo'q (skanerlangan bo'lishi mumkin).")
-    return pages
+        _validate_document(doc)  # I5, I7 — parol va sahifa soni
+        return _read_pages(doc, min_total_chars)   # I4 — matn chegarasi
+    finally:
+        doc.close()             # descriptor oqib ketmasin
 ```
 
-### Qanday tekshirasan
-- Sahifa soni PDF viewer'dagi bilan bir xil.
-- Tasodifiy 3 ta sahifani ko'z bilan solishtir: matn o'qiladimi, tartib to'g'rimi?
-- Ikki ustunli maqolada qatorlar aralashib ketayotganini yoz (cheklov sifatida `docs/limitations.md` ga).
+**Tekshiruv zanjiri** (`docs/io_contract.md` §1.2):
+
+| # | Qoida | Xato |
+|---|-------|------|
+| I1 | magic bytes `%PDF` | `InvalidPdfError` |
+| I2 | fayl bo'sh emas | `InvalidPdfError` |
+| I4 | jami belgi >= `min_total_chars` | `ScannedPdfError` |
+| I5 | `needs_pass == False` | `InvalidPdfError` |
+| I6 | `pymupdf.open()` muvaffaqiyatli | `InvalidPdfError` |
+| I7 | kamida 1 sahifa | `InvalidPdfError` |
+
+### Qanday tekshirilgan
+
+Barchasi haqiqiy bajarildi (2026-10-04):
+
+| Tekshiruv | Natija |
+|-----------|--------|
+| `pytest tests/test_pdf_extractor.py` | ✅ **45 passed** |
+| Coverage `app/services/pdf_extractor.py` | **100%** |
+| Coverage `app/schemas/document.py` | **100%** |
+| Coverage `app/core/exceptions.py` | **100%** |
+| To'liq suite (`-m "not integration"`) | ✅ **98 passed** (53 M-T + 45 M2) |
+| Notebook 01 `nbconvert --execute` | ✅ **13/13 kod hujjati**, 0 xato |
+| 4 ta namuna PDF (path) | ✅ 3/8/12/6 sahifa — 2065/4920/6443/3036 belgi |
+| `bytes` kirish == `path` kirish | ✅ bit-bit bir xil |
+| Sahifa raqamlari 1-based, tartibi saqlanadi | ✅ |
+| Bo'sh sahifalar **o'chirilmaydi** | ✅ `[True, False, True]` |
+| 10 ta xato holati | ✅ to'g'ri xato turi |
+| Xatoda hujjat yopiladi (`doc.is_closed`) | ✅ |
+
+**Xato holatlarining xaritasi:**
+
+| Holat | Natija |
+|-------|--------|
+| fayl yo'q | `InvalidPdfError` |
+| manba papka | `InvalidPdfError` |
+| bo'sh fayl (0 bayt) | `InvalidPdfError` |
+| `.pdf` nomli PNG | `InvalidPdfError` (magic bytes) |
+| oddiy matn, `.pdf` kengaytmasi | `InvalidPdfError` (magic bytes) |
+| buzilgan PDF (header butun) | `InvalidPdfError` (`pymupdf`) |
+| parol bilan himoyalangan | `InvalidPdfError` (`needs_pass`) |
+| sahifasi yo'q PDF | `InvalidPdfError` (I7) |
+| ruxsat rad etilgan fayl | `InvalidPdfError` |
+| skanerlangan (matn qatlami yo'q) | `ScannedPdfError` |
+| o'qilgan, lekin 100 belgidan kam | `ScannedPdfError` |
+
+### M2 da aniqlangan cheklovlar
+
+`docs/limitations.md` yaratildi (M17 da kengaytiriladi). Faqat **o'lchov
+bilan tasdiqlangan** topilmalar:
+
+| ID | Cheklov | Qaror |
+|----|---------|-------|
+| **L-01** | `sort=True` ikki ustunli matnni buzadi | `sort=True` ishlatilmaydi + regressiya testi |
+| **L-02** | Skanerlangan PDF | `ScannedPdfError` (OCR — non-goal) |
+| **L-03** | Parol bilan PDF | `InvalidPdfError` (`needs_pass`) |
+| **L-04** | `MIN_TOTAL_CHARS` chegarasi ikki tomonlama xato qiladi | 100, `.env` dan o'qiladi |
+| **L-05** | Testlar `data/raw/` ga bog'liq emas | PDF'lar test ichida yaratiladi |
+| **L-06** | `insert_text` test fixture matnini kesadi | `insert_textbox` ishlatiladi |
+
+> **Eski maslahat bekor qilindi:** "ikki ustunli PDF'da matn tartibi
+> buziladi → `get_text("blocks", sort=True)` ni sinab ko'r" — o'lchovda
+> noto'g'ri chiqdi (`docs/limitations.md` L-01).
 
 ### Tipik xatolar
-- Ikki ustunli PDF'da matn tartibi buziladi → keyinroq `get_text("blocks", sort=True)` ni sinab ko'r.
+- ⚠️ **`get_text("sort=True")` ishlatmang.** U matnni vertikal koordinat
+  bo'yicha saralaydi va **ikki ustunli** hujjatda chap/o'ng ustunni qatorlab
+  aralashib ketiradi — ya'ni ishlaydigan yagona variantni buzadi. Standart
+  `get_text("text")` (content stream tartibi) ishlatiladi. Ikkala holat ham
+  o'lchab tasdiqlangan → `docs/limitations.md` **L-01**.
 - Ligatura/maxsus belgilar (`ﬁ`, `ﬂ`) → M3 da normallashtiriladi.
 
 ### Definition of Done
-`extract_pages("data/raw/x.pdf")` sahifa-darajadagi matn qaytaradi; bo'sh/buzilgan/skanerlangan PDF uchun aniq xato beradi.
+- [x] `extract_pages()` sahifa-darajadagi matn qaytaradi (1-based)
+- [x] Bo'sh sahifalar **o'chirilmaydi** — statistika uchun saqlanadi
+- [x] Bo'sh/buzilgan/skanerlangan/parol bilan PDF uchun **aniq** xato
+- [x] Magic bytes `%PDF` **har doim** tekshiriladi (I1)
+- [x] `needs_pass` alohida tekshiriladi (I5) — skanerlangan bilan aralashmasin
+- [x] `min_total_chars` **kodga yozilmagan** — `.env` dan o'qiladi (qa §18)
+- [x] `path`, `Path` va `bytes` kirishlari bir xil semantika
+- [x] Hujjat xatoda ham yopiladi (`finally`)
+- [x] Testlangan: 45 test, `pdf_extractor.py` **100%** coverage
+- [x] Cheklovlar hujjatlashtirilgan (`docs/limitations.md`)
+- [ ] **M3 uni preprocessing'ga ulaydi** — keyingi milestone
 
 **Commit:** `M2: pdf extraction with error handling`
 
@@ -2084,7 +2153,7 @@ MVP → Yaxshiroq chunking → Yaxshiroq embeddings → DBSCAN/HDBSCAN
 | ✅ | **M0** — Planning | 2026-10-04 |
 | ✅ | **M1** — Environment | 2026-10-04 |
 | ✅ | **M-T** — Translation Module | 2026-10-04 |
-| ⬜ | **M2** — PDF Extraction | ____ |
+| ✅ | **M2** — PDF Extraction | 2026-10-04 |
 | ⬜ | **M3** — Text Preprocessing | ____ |
 | ⬜ | **M4** — Chunking | ____ |
 | ⬜ | **M5** — TF-IDF | ____ |
@@ -2123,10 +2192,10 @@ M-T  ✅ T1 Translation exceptions + base interface   → app/translation/{excep
      ✅ T6 Unit testlar (53) + integration (1)        → tests/test_translation.py, pytest.ini
      ✅ T7 Notebook: original vs translated            → notebooks/11_translation_experiments.ipynb
 
-M2   ⬜ T1 Notebook 01 (PyMuPDF)
-     ⬜ T2 PageText sxemasi + exceptions
-     ⬜ T3 extract_pages()
-     ⬜ T4 Unit testlar
+M2   ✅ T1 Notebook 01 (PyMuPDF)                    → notebooks/01_pdf_extraction.ipynb
+     ✅ T2 PageText sxemasi + exceptions            → app/schemas/document.py, app/core/exceptions.py
+     ✅ T3 extract_pages() + magic/needs_pass        → app/services/pdf_extractor.py, app/core/config.py
+     ✅ T4 Unit testlar (45), pdf_extractor 100%     → tests/test_pdf_extractor.py
 
 M3   ⬜ T1 Notebook 02 (artefaktlar + 3 strategiya)
      ⬜ T2 preprocessing.py (6 funksiya)
@@ -2235,7 +2304,11 @@ M18  ⬜ T1 Refaktor + type hints
      ⬜ T10 "10 daqiqada ishga tushirish" testi
 ```
 
-**Hozirgi qadam: M2.T1** — Notebook 01 (PyMuPDF bilan tanishish).
+**Hozirgi qadam: M3.T1** — Notebook 02 (preprocessing artefaktlari).
+
+> M0, M1, M-T, M2 ✅. M2 dan keyin pipeline **matn o'qishdan** boshlab
+> to'liq ishlaydi: `PDF → sahifa matni`. Keyingi: matnni tozalash → chunk →
+> TF-IDF → K-Means.
 
 > M0, M1, M-T ✅. M-T tamomlandi, endi **asosiy pipeline** boshlanadi.
 > Keyingi: `data/raw/*.pdf` → matn → preprocessing → chunking → TF-IDF → K-Means.- [ ] PDF upload ishlaydi
